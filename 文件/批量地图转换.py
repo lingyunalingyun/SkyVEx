@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-批量地图导出工具 v6.0 - 修复 v57+ 地形解析 + 模糊匹配 mesh 文件
+批量地图导出工具 v6.6 - 修复镜像问题（翻转 X 轴）
 遍历 level 目录下的所有地图文件夹，批量导出 OBJ
 输出到和 level 同级的"输出"文件夹
 支持选择是否导出标记小球
@@ -70,6 +70,86 @@ except ImportError as e:
     print(f"[WARN] Sky_Bstbake.py 导入失败: {e}")
 
 # ============================================================
+# 标记分类定义（与启动.py 保持一致）
+# ============================================================
+MARKER_CATEGORIES = {
+    '传送门': {'keywords': ['Portal'], 'color': (1.0, 0.3, 0.3), 'enabled': True},
+    '冥想区': {'keywords': ['MeditationArea'], 'color': (0.3, 0.5, 1.0), 'enabled': True},
+    'NPC': {'keywords': ['Npc'], 'color': (0.2, 0.8, 0.2), 'enabled': True},
+    '检查点': {'keywords': ['Checkpoint'], 'color': (1.0, 0.5, 0.0), 'enabled': True},
+    '标记点': {'keywords': ['Marker'], 'color': (1.0, 0.8, 0.2), 'enabled': True},
+    '边界': {'keywords': ['Boundary'], 'color': (1.0, 0.0, 0.0), 'enabled': True},
+    '风力': {'keywords': ['Wind'], 'color': (0.5, 0.8, 1.0), 'enabled': True},
+    '水体': {'keywords': ['Water'], 'color': (0.2, 0.5, 1.0), 'enabled': True},
+    '时间轴': {'keywords': ['Timeline'], 'color': (0.8, 0.3, 0.8), 'enabled': True},
+    '启用开关': {'keywords': ['Enable'], 'color': (0.5, 0.5, 0.5), 'enabled': True},
+    '粒子生成': {'keywords': ['SpawnMotes', 'Spawn'], 'color': (1.0, 1.0, 0.5), 'enabled': True},
+    '音效': {'keywords': ['SoundEmitter'], 'color': (0.2, 0.8, 0.8), 'enabled': True},
+    '光源': {'keywords': ['PointLight'], 'color': (1.0, 0.9, 0.4), 'enabled': True},
+    '火焰': {'keywords': ['Flame'], 'color': (1.0, 0.4, 0.1), 'enabled': True},
+}
+
+def get_marker_category(cls_name):
+    """根据类名判断属于哪个分类"""
+    for cat_name, cat_info in MARKER_CATEGORIES.items():
+        for keyword in cat_info['keywords']:
+            if keyword in cls_name:
+                return cat_name
+    return None
+
+def get_marker_color(cls_name):
+    for cat_info in MARKER_CATEGORIES.values():
+        for keyword in cat_info['keywords']:
+            if keyword in cls_name:
+                return cat_info['color']
+    return (0.5, 0.5, 0.5)
+
+def select_marker_categories():
+    """交互式选择要导出的标记分类（批量时在开头显示）"""
+    print("\n" + "=" * 55)
+    print("   标记分类选择（输入序号切换，回车完成）")
+    print("=" * 55)
+    print()
+    
+    categories = list(MARKER_CATEGORIES.keys())
+    for i, cat in enumerate(categories, 1):
+        status = "✅" if MARKER_CATEGORIES[cat]['enabled'] else "❌"
+        print(f"  {i:2}. {status} {cat}")
+    
+    print()
+    print("  0. 全部启用")
+    print("  a. 全部禁用")
+    print()
+    
+    while True:
+        choice = input("请输入序号 (1-14, 0, a，回车完成): ").strip()
+        if choice == '':
+            break
+        elif choice == '0':
+            for cat in categories:
+                MARKER_CATEGORIES[cat]['enabled'] = True
+            print("✅ 已启用所有标记分类")
+        elif choice.lower() == 'a':
+            for cat in categories:
+                MARKER_CATEGORIES[cat]['enabled'] = False
+            print("❌ 已禁用所有标记分类")
+        elif choice.isdigit():
+            idx = int(choice)
+            if 1 <= idx <= len(categories):
+                cat = categories[idx-1]
+                MARKER_CATEGORIES[cat]['enabled'] = not MARKER_CATEGORIES[cat]['enabled']
+                status = "✅" if MARKER_CATEGORIES[cat]['enabled'] else "❌"
+                print(f"  {idx:2}. {status} {cat}")
+            else:
+                print("❌ 无效序号")
+        else:
+            print("❌ 无效输入")
+    
+    enabled = [cat for cat in categories if MARKER_CATEGORIES[cat]['enabled']]
+    print(f"\n将导出标记: {', '.join(enabled) if enabled else '无'}")
+    return enabled
+
+# ============================================================
 # 颜色
 # ============================================================
 class Colors:
@@ -98,12 +178,13 @@ def get_class_color(cls_name):
             return color
     return DEFAULT_COLOR
 
+# 小球（修复镜像：翻转 X 和 Z）
 def make_sphere_verts(cx, cy, cz, radius=0.5, segments=8):
-    """生成小球体顶点和面（用于替代标记点）"""
     verts = []
     faces = []
-    verts.append((cx, cy + radius, cz))
-    verts.append((cx, cy - radius, cz))
+    # 翻转 X 和 Z
+    verts.append((-cx, cy + radius, -cz))
+    verts.append((-cx, cy - radius, -cz))
     rings = segments // 2
     for i in range(1, rings):
         phi = math.pi * i / rings
@@ -113,7 +194,7 @@ def make_sphere_verts(cx, cy, cz, radius=0.5, segments=8):
             theta = 2 * math.pi * j / segments
             x = cx + r * math.cos(theta)
             z = cz + r * math.sin(theta)
-            verts.append((x, y, z))
+            verts.append((-x, y, -z))
     for j in range(segments):
         faces.append((0, 2 + j, 2 + (j + 1) % segments))
     for j in range(segments):
@@ -129,6 +210,7 @@ def make_sphere_verts(cx, cy, cz, radius=0.5, segments=8):
             faces.append((a, d, c))
     return verts, faces
 
+# 变换矩阵（修复镜像：翻转 X 和 Z）
 def apply_transform(verts, raw_floats):
     if len(raw_floats) < 16:
         return verts
@@ -139,34 +221,29 @@ def apply_transform(verts, raw_floats):
         nx = m[0]*x + m[4]*y + m[8]*z + m[12]
         ny = m[1]*x + m[5]*y + m[9]*z + m[13]
         nz = m[2]*x + m[6]*y + m[10]*z + m[14]
-        result.append((nx, ny, nz))
+        # 翻转 X 和 Z
+        result.append((-nx, ny, -nz))
     return result
 
 # ============================================================
 # 模糊匹配 mesh 文件
 # ============================================================
 def find_mesh_file(mesh_folder, resource_name):
-    """查找 mesh 文件，支持模糊匹配"""
     if not os.path.isdir(mesh_folder):
         return None
-    
-    # 1. 精确匹配 .mesh
     exact_path = os.path.join(mesh_folder, f"{resource_name}.mesh")
     if os.path.exists(exact_path):
         return exact_path
-    
-    # 2. 搜索包含资源名的文件
     try:
         for f in os.listdir(mesh_folder):
             if f.endswith('.mesh') and resource_name in f:
                 return os.path.join(mesh_folder, f)
     except:
         pass
-    
     return None
 
 # ============================================================
-# 地形解析（修复 v57+）
+# 地形解析（修复镜像：翻转 X 和 Z）
 # ============================================================
 def parse_meshes_to_obj_data(meshes_file):
     if not HAS_MESHES or not HAS_LZ4:
@@ -217,9 +294,7 @@ def parse_meshes_to_obj_data(meshes_file):
     
     for section in ['terrain', 'skirts', 'occluder']:
         for chunk in result.get(section, []):
-            # 检查是否是 v57+ 格式（有 ib_raw 和 patches）
             if chunk.get('ib_raw') and chunk.get('patches'):
-                # v57+ 地形解析
                 verts = chunk.get('verts', [])
                 ib_raw = chunk.get('ib_raw', b'')
                 patches = chunk.get('patches', [])
@@ -229,8 +304,6 @@ def parse_meshes_to_obj_data(meshes_file):
                     continue
                 
                 base_v = len(all_verts)
-                
-                # 获取所有需要的顶点并建立索引映射
                 vert_indices = {}
                 new_idx = 0
                 
@@ -241,7 +314,8 @@ def parse_meshes_to_obj_data(meshes_file):
                         if vi not in vert_indices:
                             vert_indices[vi] = new_idx
                             pos = verts[vi].get('pos', (0, 0, 0))
-                            all_verts.append((pos[0], pos[1], -pos[2]))
+                            # 翻转 X 和 Z
+                            all_verts.append((-pos[0], pos[1], -pos[2]))
                             new_idx += 1
                 
                 for patch in terrain_patches:
@@ -261,7 +335,6 @@ def parse_meshes_to_obj_data(meshes_file):
                             all_faces.append((i0 + base_v, i2 + base_v, i1 + base_v))
                 
             elif chunk.get('verts') and chunk.get('indices'):
-                # 旧格式
                 verts = chunk.get('verts', [])
                 indices = chunk.get('indices', [])
                 if not verts or not indices:
@@ -269,7 +342,8 @@ def parse_meshes_to_obj_data(meshes_file):
                 base_v = len(all_verts)
                 for v in verts:
                     pos = v.get('pos', (0, 0, 0))
-                    all_verts.append((pos[0], pos[1], -pos[2]))
+                    # 翻转 X 和 Z
+                    all_verts.append((-pos[0], pos[1], -pos[2]))
                 for i in range(0, len(indices), 3):
                     if i + 2 < len(indices):
                         all_faces.append((indices[i] + base_v, indices[i+2] + base_v, indices[i+1] + base_v))
@@ -402,10 +476,11 @@ def find_all_levelmesh_with_resources(json_data):
             })
     return results
 
-def find_all_markers(json_data):
-    """提取所有非 LevelMesh 的标记节点"""
+def find_markers_by_category(json_data, enabled_categories):
+    """按分类提取标记点"""
     markers = []
     bst_nodes = json_data.get('BSTNodes', {})
+    enabled_set = set(enabled_categories) if enabled_categories else set()
     
     for node_name, node_data in bst_nodes.items():
         if not isinstance(node_data, dict):
@@ -415,23 +490,33 @@ def find_all_markers(json_data):
                 continue
             if 'LevelMesh' in cls_name:
                 continue
+            
             coords, _ = extract_transform_from_cls_data(cls_data)
             if coords:
-                markers.append({
-                    'name': node_name,
-                    'class': cls_name,
-                    'x': coords[0], 'y': coords[1], 'z': coords[2],
-                    'color': get_class_color(cls_name)
-                })
+                category = get_marker_category(cls_name)
+                if category and category in enabled_set:
+                    markers.append({
+                        'name': node_name,
+                        'class': cls_name,
+                        'category': category,
+                        'x': coords[0], 'y': coords[1], 'z': coords[2],
+                        'color': get_marker_color(cls_name)
+                    })
+                elif not category and '其他' in enabled_set:
+                    markers.append({
+                        'name': node_name,
+                        'class': cls_name,
+                        'category': '其他',
+                        'x': coords[0], 'y': coords[1], 'z': coords[2],
+                        'color': DEFAULT_COLOR
+                    })
     return markers
 
 # ============================================================
 # 单个地图导出
 # ============================================================
-def export_single_map(map_folder, mesh_folder, output_base_dir, export_markers, log_entry):
+def export_single_map(map_folder, mesh_folder, output_base_dir, export_markers, enabled_categories, log_entry):
     map_name = os.path.basename(map_folder)
-    
-    # 输出目录：输出文件夹/地图名/
     output_dir = os.path.join(output_base_dir, map_name)
     os.makedirs(output_dir, exist_ok=True)
     
@@ -483,10 +568,10 @@ def export_single_map(map_folder, mesh_folder, output_base_dir, export_markers, 
     log_entry['levelmesh_count'] = len(level_meshes)
     log_entry['unique_resources'] = len(unique_resources)
     
-    # 4. 提取标记
+    # 4. 提取标记（按分类过滤）
     markers = []
-    if export_markers:
-        markers = find_all_markers(json_data)
+    if export_markers and enabled_categories:
+        markers = find_markers_by_category(json_data, enabled_categories)
     log_entry['markers_count'] = len(markers)
     
     # 5. 地形
@@ -496,7 +581,7 @@ def export_single_map(map_folder, mesh_folder, output_base_dir, export_markers, 
     log_entry['terrain_verts'] = len(terrain_verts)
     log_entry['terrain_tris'] = len(terrain_faces)
     
-    # 6. 模型加载（支持模糊匹配）
+    # 6. 模型加载
     mesh_models = []
     loaded_resources = set()
     success_count = 0
@@ -508,10 +593,7 @@ def export_single_map(map_folder, mesh_folder, output_base_dir, export_markers, 
             res = lm['resource_name']
             if res in loaded_resources:
                 continue
-            
-            # 使用模糊匹配查找 mesh 文件
             mesh_file = find_mesh_file(mesh_folder, res)
-            
             if mesh_file and os.path.exists(mesh_file):
                 verts, faces = parse_mesh_file(mesh_file)
                 if verts and faces:
@@ -548,8 +630,9 @@ def export_single_map(map_folder, mesh_folder, output_base_dir, export_markers, 
         with open(mtl_path, 'w', encoding='utf-8') as mf:
             mf.write("newmtl terrain\nKd 0.45 0.42 0.38\nKa 0.1 0.1 0.1\nKs 0.0 0.0 0.0\nd 1.0\n\n")
             mf.write("newmtl model\nKd 0.75 0.73 0.68\nKa 0.1 0.1 0.1\nKs 0.0 0.0 0.0\nd 1.0\n\n")
-            for cls_name, color in CLASS_COLORS.items():
-                mf.write(f"newmtl {cls_name}\nKd {color[0]:.4f} {color[1]:.4f} {color[2]:.4f}\nKa 0.1 0.1 0.1\nKs 0.0 0.0 0.0\nd 1.0\n\n")
+            for cat_name, cat_info in MARKER_CATEGORIES.items():
+                color = cat_info['color']
+                mf.write(f"newmtl marker_{cat_name}\nKd {color[0]:.4f} {color[1]:.4f} {color[2]:.4f}\nKa 0.1 0.1 0.1\nKs 0.0 0.0 0.0\nd 1.0\n\n")
             mf.write("newmtl default\nKd 0.5 0.5 0.5\nKa 0.1 0.1 0.1\nKs 0.0 0.0 0.0\nd 1.0\n")
         
         global_v = 1
@@ -571,30 +654,37 @@ def export_single_map(map_folder, mesh_folder, output_base_dir, export_markers, 
             for model in mesh_models:
                 for inst in model['instances']:
                     raw_floats = inst.get('raw_floats')
-                    transformed = apply_transform(model['verts'], raw_floats) if raw_floats else model['verts']
+                    if raw_floats:
+                        transformed = apply_transform(model['verts'], raw_floats)
+                    else:
+                        transformed = [(-v[0], v[1], -v[2]) for v in model['verts']]
+                    
                     f.write(f"o {model['resource']}\nusemtl model\n")
                     for v in transformed:
-                        f.write(f"v {v[0]:.6f} {v[1]:.6f} {-v[2]:.6f}\n")
+                        f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
                     for tri in model['faces']:
                         f.write(f"f {tri[0]+global_v} {tri[1]+global_v} {tri[2]+global_v}\n")
                     global_v += len(transformed)
                 f.write("\n")
             
-            # 标记小球（仅在启用时导出）
+            # 标记小球（按分类分组）
             if export_markers and markers:
-                class_groups = {}
+                markers_by_cat = {}
                 for m in markers:
-                    cls = m['class']
-                    if cls not in class_groups:
-                        class_groups[cls] = []
-                    class_groups[cls].append(m)
+                    cat = m.get('category', '其他')
+                    if cat not in markers_by_cat:
+                        markers_by_cat[cat] = []
+                    markers_by_cat[cat].append(m)
                 
-                for cls_name, nodes in class_groups.items():
-                    color_name = cls_name if cls_name in CLASS_COLORS else 'default'
-                    f.write(f"o {cls_name}_Markers\nusemtl {color_name}\n")
-                    f.write(f"# {len(nodes)} 个 {cls_name} 标记点\n")
+                for cat_name, nodes in markers_by_cat.items():
+                    if cat_name in MARKER_CATEGORIES:
+                        mtl_name = f"marker_{cat_name}"
+                    else:
+                        mtl_name = 'default'
+                    f.write(f"o {cat_name}_Markers\nusemtl {mtl_name}\n")
+                    f.write(f"# {len(nodes)} 个 {cat_name} 标记点\n")
                     for node in nodes:
-                        verts, faces = make_sphere_verts(node['x'], node['y'], -node['z'], 0.5)
+                        verts, faces = make_sphere_verts(node['x'], node['y'], node['z'], 0.5)
                         for v in verts:
                             f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
                         for tri in faces:
@@ -630,11 +720,13 @@ def find_map_folders(level_dir):
                 continue
     return map_folders
 
-def run_batch(level_dir, mesh_dir, output_dir, export_markers):
+def run_batch(level_dir, mesh_dir, output_dir, export_markers, enabled_categories):
     print(f"\n{Colors.BOLD}📂 Level 目录: {level_dir}{Colors.END}")
     print(f"{Colors.BOLD}📦 Mesh 目录: {mesh_dir}{Colors.END}")
     print(f"{Colors.BOLD}📁 输出目录: {output_dir}{Colors.END}")
     print(f"{Colors.BOLD}🏷️  导出标记: {'是' if export_markers else '否'}{Colors.END}")
+    if export_markers and enabled_categories:
+        print(f"{Colors.BOLD}📌 标记分类: {', '.join(enabled_categories)}{Colors.END}")
     print()
     
     map_folders = find_map_folders(level_dir)
@@ -662,6 +754,7 @@ def run_batch(level_dir, mesh_dir, output_dir, export_markers):
         'mesh_dir': mesh_dir,
         'output_dir': output_dir,
         'export_markers': export_markers,
+        'enabled_categories': enabled_categories if export_markers else [],
         'total_maps': len(map_folders),
         'success_count': 0,
         'fail_count': 0,
@@ -675,7 +768,7 @@ def run_batch(level_dir, mesh_dir, output_dir, export_markers):
         print(f"\n[{i}/{len(map_folders)}] {map_name}")
         
         log_entry = {}
-        success = export_single_map(map_folder, mesh_dir, output_dir, export_markers, log_entry)
+        success = export_single_map(map_folder, mesh_dir, output_dir, export_markers, enabled_categories, log_entry)
         
         if success:
             log_data['success_count'] += 1
@@ -712,6 +805,8 @@ def run_batch(level_dir, mesh_dir, output_dir, export_markers):
         f.write(f"Mesh 目录: {log_data['mesh_dir']}\n")
         f.write(f"输出目录: {log_data['output_dir']}\n")
         f.write(f"导出标记: {'是' if export_markers else '否'}\n")
+        if export_markers and enabled_categories:
+            f.write(f"标记分类: {', '.join(enabled_categories)}\n")
         f.write(f"总地图数: {log_data['total_maps']}\n")
         f.write(f"成功数: {log_data['success_count']}\n")
         f.write(f"失败数: {log_data['fail_count']}\n")
@@ -751,15 +846,13 @@ def run_batch(level_dir, mesh_dir, output_dir, export_markers):
 # ============================================================
 def main():
     print("=" * 55)
-    print("   批量地图导出工具 v6.0 - 模糊匹配 mesh 文件")
+    print("   批量地图导出工具 v6.6 - 修复镜像")
     print("   输出到和 level 同级的'输出'文件夹")
-    print("   支持选择是否导出标记小球")
     print("=" * 55)
     print()
-    print("标记小球说明：")
-    print("  - 小球是代替 NPC、传送门、冥想区等交互点的标记")
-    print("  - 导出小球可以帮助定位这些交互点的位置")
-    print("  - 如果只需要地形和模型，可以选择不导出小球")
+    print("标记分类说明：")
+    print("  传送门、冥想区、NPC、检查点、标记点、边界、风力、水体、")
+    print("  时间轴、启用开关、粒子生成、音效、光源、火焰")
     print()
     
     level_dir = input(f"{Colors.CYAN}Level 目录路径: {Colors.END}").strip().strip('"').strip("'")
@@ -778,12 +871,16 @@ def main():
     export_markers_input = input(f"{Colors.CYAN}是否导出标记小球? (y/n, 默认 y): {Colors.END}").strip().lower()
     export_markers = export_markers_input != 'n'
     
+    enabled_categories = None
+    if export_markers:
+        enabled_categories = select_marker_categories()
+    
     # 输出目录：和 level 同级的"输出"文件夹
     level_parent = os.path.dirname(level_dir.rstrip('/\\'))
     output_dir = os.path.join(level_parent, "输出")
     print(f"{Colors.CYAN}输出目录: {output_dir}{Colors.END}")
     
-    run_batch(level_dir, mesh_dir, output_dir, export_markers)
+    run_batch(level_dir, mesh_dir, output_dir, export_markers, enabled_categories)
     
     input(f"\n{Colors.CYAN}按回车退出...{Colors.END}")
 
