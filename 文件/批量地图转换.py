@@ -341,7 +341,7 @@ def parse_mesh_file(mesh_path):
 # JSON 解析和资源提取
 # ============================================================
 def convert_bin_to_json(bin_path, output_dir):
-    converter = os.path.join(SCRIPT_DIR, '单个转换.py')
+    converter = os.path.join(SCRIPT_DIR, 'bintojson.py')
     if not os.path.exists(converter):
         return None
     

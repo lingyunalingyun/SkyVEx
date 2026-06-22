@@ -448,12 +448,12 @@ def parse_mesh_file(mesh_path, log_entry=None):
     return [], []
 
 # ============================================================
-# 调用单个转换.py 生成 JSON
+# 调用bintojson.py 生成 JSON
 # ============================================================
 def convert_bin_to_json(bin_path, output_dir, log_entry):
-    converter = os.path.join(SCRIPT_DIR, '单个转换.py')
+    converter = os.path.join(SCRIPT_DIR, 'bintojson.py')
     if not os.path.exists(converter):
-        log_entry['error'] = "未找到 单个转换.py"
+        log_entry['error'] = "未找到 bintojson.py"
         return None
     
     json_path = os.path.join(output_dir, os.path.basename(bin_path) + '.json')
@@ -1008,7 +1008,7 @@ def main():
             temp_json = bin_file + '.json'
             if not os.path.exists(temp_json):
                 # 临时转换
-                converter = os.path.join(SCRIPT_DIR, '单个转换.py')
+                converter = os.path.join(SCRIPT_DIR, 'bintojson.py')
                 if os.path.exists(converter):
                     subprocess.run([sys.executable, converter, bin_file], capture_output=True, cwd=path)
             
