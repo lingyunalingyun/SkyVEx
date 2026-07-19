@@ -472,9 +472,11 @@ def parse_meshes_to_obj_data(meshes_file, log_entry):
 # ============================================================
 _sky_mesh_mod = None
 try:
-    _sky_mesh_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                   '..', '..', '..', 'sky_mesh_to_obj.py')
-    _sky_mesh_path = os.path.normpath(_sky_mesh_path)
+    _sky_mesh_path = os.path.join(SCRIPT_DIR, 'sky_mesh_to_obj.py')
+    if not os.path.exists(_sky_mesh_path):
+        _sky_mesh_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       '..', '..', '..', 'sky_mesh_to_obj.py')
+        _sky_mesh_path = os.path.normpath(_sky_mesh_path)
     if not os.path.exists(_sky_mesh_path):
         _sky_mesh_path = r"F:\编程文件\编程计划\Sky逆向\sky_mesh_to_obj.py"
     if os.path.exists(_sky_mesh_path):
