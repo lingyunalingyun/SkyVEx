@@ -11,10 +11,13 @@ GUI frontend for batch-exporting 3D map data from *Sky: Children of the Light*.
 A graphical interface that wraps the community's existing map-parsing scripts, adding:
 
 - **One-click game directory scanning** — point at your game install, auto-discover all maps and mesh files
+- **APK extraction** — open a Sky APK directly and extract game assets without a PC install
 - **Visual map selection** — scene-grouped tree with per-map checkboxes
 - **Marker class filtering** — background scan with progress bar, pick which marker types to export
 - **Texture extraction** — KTX (BC6H) → PNG conversion, UV mapping in OBJ, material references in MTL
 - **Script manager** — view, open, and swap the underlying parsing scripts
+- **DPI-aware rendering** — crisp UI on high-DPI / scaled displays
+- **Sky-styled dark theme** — deep navy palette inspired by the game's visual identity
 
 > **The parsing scripts (terrain, mesh, bin) are NOT written by us.**
 > They come from the open-source projects listed in [Credits](#credits) and [NOTICE](./NOTICE).
@@ -57,7 +60,7 @@ cd tool/scripts
 python gui.py
 ```
 
-1. **Browse** to your game install directory, click **Scan**
+1. **Browse** to your game install directory, click **Scan** — or click **APK** to open an APK file directly
 2. Check/uncheck maps in the tree
 3. Toggle markers, textures, adjust output directory
 4. Click **Start Export**
