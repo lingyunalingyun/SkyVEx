@@ -129,7 +129,7 @@ Requires [PyInstaller](https://pyinstaller.org/):
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --noconsole --name SkyVEx SkyVEx.py
+pyinstaller --onefile --noconsole --icon=icon.ico --name SkyVEx SkyVEx.py
 ```
 
 The output `dist/SkyVEx.exe` can be placed in the project root. Python must still be installed on the target machine — the exe is just a launcher, not a standalone bundle.

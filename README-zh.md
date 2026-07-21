@@ -129,7 +129,7 @@ tool/scripts/
 
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --noconsole --name SkyVEx SkyVEx.py
+pyinstaller --onefile --noconsole --icon=icon.ico --name SkyVEx SkyVEx.py
 ```
 
 生成的 `dist/SkyVEx.exe` 放到项目根目录即可。目标机器仍需安装 Python — exe 只是启动器，不是独立打包。

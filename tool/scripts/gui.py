@@ -1060,10 +1060,14 @@ def main():
     except Exception:
         pass
     root = tk.Tk()
-    try:
-        root.iconbitmap(default="")
-    except tk.TclError:
-        pass
+    _icon_path = os.path.join(os.path.dirname(SCRIPT_DIR), os.pardir, "icon.ico")
+    if os.path.isfile(_icon_path):
+        root.iconbitmap(_icon_path)
+    else:
+        try:
+            root.iconbitmap(default="")
+        except tk.TclError:
+            pass
     SkyExportGUI(root)
     root.mainloop()
 
