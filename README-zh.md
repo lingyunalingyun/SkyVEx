@@ -49,7 +49,7 @@ pip install lz4 meshoptimizer
 ### GUI（推荐）
 
 ```bash
-cd tool/文件
+cd tool/scripts
 python gui.py
 ```
 
@@ -63,8 +63,8 @@ python gui.py
 原始命令行脚本仍可独立使用：
 
 ```bash
-python 启动.py           # 单地图导出（交互式）
-python 批量地图转换.py    # 批量导出
+python launcher.py        # 单地图导出（交互式）
+python batch_export.py    # 批量导出
 python Sky_Bstbake.py --unpack BstBaked.meshes --export-obj  # 仅地形
 python bintojson.py Objects.level.bin   # bin → json
 ```
@@ -72,25 +72,25 @@ python bintojson.py Objects.level.bin   # bin → json
 ## 文件结构与版权归属
 
 ```
-tool/文件/
+tool/scripts/
 │
 │  [原创 — lingyunalingyun]
 ├── gui.py                     # 可视化界面 & 纹理管线
 │
 │  [上游 + 修改 — 详见文件头注释]
-├── 批量地图转换.py              # 批量导出引擎（+ 纹理管线）
-├── 启动.py                     # 单地图命令行导出（+ output_dir）
+├── batch_export.py            # 批量导出引擎（+ 纹理管线）
+├── launcher.py                # 单地图命令行导出（+ output_dir）
 │
 │  [原创 — lingyunalingyun，格式研究来自 Miau]
-├── bintojson.py                   # TGCL .bin → .json 解析器
+├── bintojson.py               # TGCL .bin → .json 解析器
 │
 │  [上游 — 原作者，详见 NOTICE]
-├── Sky_Bstbake.py              # 核心地形解析器
-├── sky_mesh_to_obj.py          # .mesh 解析器 v2 (v31/v32)
-├── meshtoobj.py                # .mesh 解析器旧版 (v23–v30)
-├── 单独启动Sky_Bstbake.py       # 独立地形导出
+├── Sky_Bstbake.py             # 核心地形解析器
+├── sky_mesh_to_obj.py         # .mesh 解析器 v2 (v31/v32)
+├── meshtoobj.py               # .mesh 解析器旧版 (v23–v30)
+├── bstbake_standalone.py      # 独立地形导出
 └── _meshopt/
-    └── meshopt2.dll            # meshopt 解码库 (Windows)
+    └── meshopt2.dll           # meshopt 解码库 (Windows)
 ```
 
 每个脚本文件头部都标注了来源和许可证，详细的上游许可证信息请参见 [NOTICE](./NOTICE)。
@@ -101,8 +101,8 @@ tool/文件/
 
 | 文件 | 修改内容 |
 |------|---------|
-| `批量地图转换.py` | 添加纹理提取管线：`extract_texture_name()`、`convert_ktx_to_png()`、`find_ktx_file()`；OBJ 输出增加 `vt`（UV 坐标）和 `f v/vt` 格式；MTL 输出增加 `map_Kd` 纹理引用；`export_single_map()` 增加 `image_dirs` 参数 |
-| `启动.py` | `export_map()` 添加可选 `output_dir` 参数 |
+| `batch_export.py` | 添加纹理提取管线：`extract_texture_name()`、`convert_ktx_to_png()`、`find_ktx_file()`；OBJ 输出增加 `vt`（UV 坐标）和 `f v/vt` 格式；MTL 输出增加 `map_Kd` 纹理引用；`export_single_map()` 增加 `image_dirs` 参数 |
+| `launcher.py` | `export_map()` 添加可选 `output_dir` 参数 |
 | `Sky_Bstbake.py` | 修复 meshoptimizer 参数顺序 |
 
 其余上游脚本均**未经修改**，与原始仓库保持一致。
@@ -137,6 +137,6 @@ tool/文件/
 
 ## 许可证
 
-SkyVEx 的 GUI 和纹理管线代码（`gui.py` 及 `批量地图转换.py` 中的新增部分）以 MIT 许可证发布 — 见 [LICENSE](./LICENSE)。
+SkyVEx 的 GUI 和纹理管线代码（`gui.py` 及 `batch_export.py` 中的新增部分）以 MIT 许可证发布 — 见 [LICENSE](./LICENSE)。
 
 上游解析脚本保留其原始 MIT 许可证 — 见 [NOTICE](./NOTICE)。

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# [Upstream + Modified] 启动 — single map CLI export
+# [Upstream + Modified] launcher — single map CLI export
 # Original authors: checion (雨人), Heriel (落秋), potato
 # License: MIT (see NOTICE)
 # Modified by lingyunalingyun: 添加 output_dir 参数支持

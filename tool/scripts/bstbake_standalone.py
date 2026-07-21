@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# [Upstream] 单独启动Sky_Bstbake — standalone terrain export launcher
+# [Upstream] bstbake_standalone — standalone terrain export launcher
 # Source: https://github.com/ThatSkyOldServer/SkyBstbake
 # Authors: checion (雨人) & Heriel (落秋)
 # License: MIT (see NOTICE)

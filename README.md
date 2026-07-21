@@ -49,7 +49,7 @@ pip install lz4 meshoptimizer
 ### GUI (recommended)
 
 ```bash
-cd tool/文件
+cd tool/scripts
 python gui.py
 ```
 
@@ -63,8 +63,8 @@ python gui.py
 The original command-line scripts still work independently:
 
 ```bash
-python 启动.py           # Single map (interactive prompts)
-python 批量地图转换.py    # Batch export
+python launcher.py        # Single map (interactive prompts)
+python batch_export.py    # Batch export
 python Sky_Bstbake.py --unpack BstBaked.meshes --export-obj  # Terrain only
 python bintojson.py Objects.level.bin   # bin → json
 ```
@@ -72,25 +72,25 @@ python bintojson.py Objects.level.bin   # bin → json
 ## File structure & copyright
 
 ```
-tool/文件/
+tool/scripts/
 │
 │  [Original — lingyunalingyun]
 ├── gui.py                     # GUI frontend & texture pipeline
 │
 │  [Upstream + Modified — see headers for details]
-├── 批量地图转换.py              # Batch export engine (+ texture pipeline)
-├── 启动.py                     # Single map CLI export (+ output_dir)
+├── batch_export.py            # Batch export engine (+ texture pipeline)
+├── launcher.py                # Single map CLI export (+ output_dir)
 │
 │  [Original — lingyunalingyun, format research by Miau]
-├── bintojson.py                   # TGCL .bin → .json parser
+├── bintojson.py               # TGCL .bin → .json parser
 │
 │  [Upstream — original authors, see NOTICE]
-├── Sky_Bstbake.py              # Core terrain parser
-├── sky_mesh_to_obj.py          # .mesh parser v2 (v31/v32)
-├── meshtoobj.py                # .mesh parser legacy (v23–v30)
-├── 单独启动Sky_Bstbake.py       # Standalone terrain export
+├── Sky_Bstbake.py             # Core terrain parser
+├── sky_mesh_to_obj.py         # .mesh parser v2 (v31/v32)
+├── meshtoobj.py               # .mesh parser legacy (v23–v30)
+├── bstbake_standalone.py      # Standalone terrain export
 └── _meshopt/
-    └── meshopt2.dll            # meshopt decoder (Windows)
+    └── meshopt2.dll           # meshopt decoder (Windows)
 ```
 
 Every script file contains a header comment indicating its source and license. Please refer to those headers and the [NOTICE](./NOTICE) file for upstream licensing details.
@@ -101,8 +101,8 @@ The following upstream files were modified. All changes are clearly marked in th
 
 | File | What was changed |
 |------|-----------------|
-| `批量地图转换.py` | Added texture extraction pipeline: `extract_texture_name()`, `convert_ktx_to_png()`, `find_ktx_file()`; OBJ output now includes `vt` (UV coords) and `f v/vt` format; MTL output includes `map_Kd` texture references; `export_single_map()` accepts `image_dirs` parameter |
-| `启动.py` | Added optional `output_dir` parameter to `export_map()` |
+| `batch_export.py` | Added texture extraction pipeline: `extract_texture_name()`, `convert_ktx_to_png()`, `find_ktx_file()`; OBJ output now includes `vt` (UV coords) and `f v/vt` format; MTL output includes `map_Kd` texture references; `export_single_map()` accepts `image_dirs` parameter |
+| `launcher.py` | Added optional `output_dir` parameter to `export_map()` |
 | `Sky_Bstbake.py` | Fixed meshoptimizer parameter order |
 
 All other upstream scripts are included **unmodified** from their original repositories.
@@ -137,6 +137,6 @@ All other upstream scripts are included **unmodified** from their original repos
 
 ## License
 
-The SkyVEx GUI and texture pipeline code (`gui.py` and additions to `批量地图转换.py`) are released under the MIT License — see [LICENSE](./LICENSE).
+The SkyVEx GUI and texture pipeline code (`gui.py` and additions to `batch_export.py`) are released under the MIT License — see [LICENSE](./LICENSE).
 
 The upstream parsing scripts retain their original MIT licenses — see [NOTICE](./NOTICE) for details.

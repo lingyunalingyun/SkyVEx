@@ -585,7 +585,7 @@ class SkyExportGUI:
 
     # ── module import ──────────────────────────────────────
     SCRIPT_FILES = [
-        ("批量地图转换.py", "导出核心"),
+        ("batch_export.py", "导出核心"),
         ("meshtoobj.py", "Mesh 解析"),
         ("Sky_Bstbake.py", "地形解析"),
         ("bintojson.py", "Bin→JSON"),
@@ -598,7 +598,7 @@ class SkyExportGUI:
             import importlib.util
             import io as _io
 
-            batch_path = os.path.join(self._script_dir, "批量地图转换.py")
+            batch_path = os.path.join(self._script_dir, "batch_export.py")
             if os.path.exists(batch_path):
                 old_out, old_err = sys.stdout, sys.stderr
                 sys.stdout = _io.StringIO()

@@ -3,7 +3,13 @@ __pycache__/
 *.pyo
 
 # backup zips
-tool/文件/[备份]*/
+tool/scripts/[备份]*/
+
+# PyInstaller
+*.exe
+*.spec
+build/
+dist/
 
 # old zip distribution
 tool.zip
