@@ -25,51 +25,46 @@ SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, SCRIPT_DIR)
 
 # ============================================================
-# 导入依赖
+# 导入依赖 (通过 backend 注册机制)
 # ============================================================
-HAS_LZ4 = False
-HAS_MESHES = False
-HAS_MESH = False
-parse_and_split = None
-_mesh_handlers = {}
-HEADER_VERSION_MAP = {}
+from backends import (
+    get_available_meshes_backends, get_available_mesh_backends,
+    get_meshes_backends, get_mesh_backends,
+)
 
-try:
-    import lz4.block
-    HAS_LZ4 = True
-except ImportError:
-    print("[WARN] lz4 未安装，地形导出将不可用")
-    print("       请运行: pip install lz4")
+_active_meshes_backend = None
+_active_mesh_backend = None
 
-# 导入 mesh 解析
-try:
-    from meshtoobj import (
-        process_header_17, process_header_1A, process_header_1C,
-        process_header_1E, process_header_1F, process_header_20,
-        HEADER_VERSION_MAP as _HVM
-    )
-    HEADER_VERSION_MAP = _HVM
-    _mesh_handlers = {
-        b'\x17\x00\x00\x00': process_header_17,
-        b'\x1a\x00\x00\x00': process_header_1A,
-        b'\x1c\x00\x00\x00': process_header_1C,
-        b'\x1e\x00\x00\x00': process_header_1E,
-        b'\x1f\x00\x00\x00': process_header_1F,
-        b'\x20\x00\x00\x00': process_header_20,
-    }
-    HAS_MESH = True
-    print("[OK] meshtoobj.py 已加载")
-except ImportError as e:
-    print(f"[WARN] meshtoobj.py 导入失败: {e}")
+def _init_backends(preferred_meshes=None, preferred_mesh=None):
+    global _active_meshes_backend, _active_mesh_backend
+    meshes_avail = get_available_meshes_backends()
+    mesh_avail = get_available_mesh_backends()
 
-# 导入 meshes 解析
-try:
-    from Sky_Bstbake import parse_and_split as _parse_and_split
-    parse_and_split = _parse_and_split
-    HAS_MESHES = True
-    print("[OK] Sky_Bstbake.py 已加载")
-except ImportError as e:
-    print(f"[WARN] Sky_Bstbake.py 导入失败: {e}")
+    if preferred_meshes and preferred_meshes in meshes_avail:
+        _active_meshes_backend = meshes_avail[preferred_meshes]
+    elif meshes_avail:
+        for pref in ["meshes2obj_json", "bstbake"]:
+            if pref in meshes_avail:
+                _active_meshes_backend = meshes_avail[pref]
+                break
+        if _active_meshes_backend is None:
+            _active_meshes_backend = next(iter(meshes_avail.values()))
+
+    if preferred_mesh and preferred_mesh in mesh_avail:
+        _active_mesh_backend = mesh_avail[preferred_mesh]
+    elif mesh_avail:
+        _active_mesh_backend = next(iter(mesh_avail.values()))
+
+    if _active_meshes_backend:
+        print(f"[OK] .meshes 后端: {_active_meshes_backend.name} ({_active_meshes_backend.description})")
+    else:
+        print("[WARN] 无可用 .meshes 后端，地形导出将不可用")
+    if _active_mesh_backend:
+        print(f"[OK] .mesh 后端: {_active_mesh_backend.name} ({_active_mesh_backend.description})")
+    else:
+        print("[WARN] 无可用 .mesh 后端，模型导出将不可用")
+
+_init_backends()
 
 # ============================================================
 # 全局颜色映射（跨地图共享）
@@ -190,154 +185,27 @@ def find_mesh_file(mesh_folder, resource_name):
     return None
 
 # ============================================================
-# 地形解析（修复镜像：翻转 X 和 Z）
+# 地形解析（通过 backend 分发）
 # ============================================================
 def parse_meshes_to_obj_data(meshes_file):
-    if not HAS_MESHES or not HAS_LZ4:
+    if _active_meshes_backend is None:
         return [], []
     try:
-        with open(meshes_file, 'rb') as f:
-            data = f.read()
-    except:
-        return [], []
-    
-    if data[0:4] != b'LVL0':
-        return [], []
-    
-    file_version = struct.unpack_from('<I', data, 0x04)[0]
-    lod0_offset = lod0_length = 0
-    geo0_offset = geo0_length = 0
-    metr_offset = metr_length = 0
-    
-    for i in range(data[0x08]):
-        base = 0x08 + 4 + i * 12
-        name = data[base:base+4].rstrip(b'\x00').decode('ascii', errors='ignore')
-        seg_offset = struct.unpack_from('<I', data, base+4)[0]
-        seg_length = struct.unpack_from('<I', data, base+8)[0]
-        if name == 'LOD0':
-            lod0_offset, lod0_length = seg_offset, seg_length
-        elif name == 'GEO0':
-            geo0_offset, geo0_length = seg_offset, seg_length
-        elif name == 'METR':
-            metr_offset, metr_length = seg_offset, seg_length
-    
-    if lod0_length == 0:
-        return [], []
-    
-    compressed = data[lod0_offset:lod0_offset + lod0_length]
-    decompressed = lz4.block.decompress(compressed, uncompressed_size=0xC00000)
-    geo_data = data[geo0_offset:geo0_offset + geo0_length] if (file_version >= 57 and geo0_length > 0) else None
-    metr_data = data[metr_offset:metr_offset + metr_length] if (file_version >= 55 and metr_length > 0) else None
-    
-    try:
-        result, _ = parse_and_split(decompressed, file_version, metr_data, geo_data)
+        return _active_meshes_backend.parse_to_obj_data(meshes_file)
     except Exception as e:
-        print(f"    解析失败: {e}")
+        print(f"    解析失败 ({_active_meshes_backend.name}): {e}")
         return [], []
-    
-    all_verts = []
-    all_faces = []
-    v_offset = 0
-    
-    for section in ['terrain', 'skirts', 'occluder']:
-        for chunk in result.get(section, []):
-            if chunk.get('ib_raw') and chunk.get('patches'):
-                verts = chunk.get('verts', [])
-                ib_raw = chunk.get('ib_raw', b'')
-                patches = chunk.get('patches', [])
-                terrain_patches = [p for p in patches if p['array'] == 'A']
-                
-                if not verts or not ib_raw or not terrain_patches:
-                    continue
-                
-                base_v = len(all_verts)
-                vert_indices = {}
-                new_idx = 0
-                
-                for patch in terrain_patches:
-                    vs = patch['vert_start']
-                    ve = patch['vert_end']
-                    for vi in range(vs, ve):
-                        if vi not in vert_indices:
-                            vert_indices[vi] = new_idx
-                            pos = verts[vi].get('pos', (0, 0, 0))
-                            # 翻转 X 和 Z
-                            all_verts.append((-pos[0], pos[1], -pos[2]))
-                            new_idx += 1
-                
-                for patch in terrain_patches:
-                    ib_start = patch['ib_byte_off']
-                    ib_end = ib_start + patch['ib_byte_len']
-                    patch_bytes = ib_raw[ib_start:ib_end]
-                    tri_count = len(patch_bytes) // 3
-                    if tri_count == 0:
-                        continue
-                    vs = patch['vert_start']
-                    for ti in range(tri_count):
-                        bo = ti * 3
-                        i0 = vert_indices.get(patch_bytes[bo] + vs, -1)
-                        i1 = vert_indices.get(patch_bytes[bo + 1] + vs, -1)
-                        i2 = vert_indices.get(patch_bytes[bo + 2] + vs, -1)
-                        if i0 >= 0 and i1 >= 0 and i2 >= 0:
-                            all_faces.append((i0 + base_v, i2 + base_v, i1 + base_v))
-                
-            elif chunk.get('verts') and chunk.get('indices'):
-                verts = chunk.get('verts', [])
-                indices = chunk.get('indices', [])
-                if not verts or not indices:
-                    continue
-                base_v = len(all_verts)
-                for v in verts:
-                    pos = v.get('pos', (0, 0, 0))
-                    # 翻转 X 和 Z
-                    all_verts.append((-pos[0], pos[1], -pos[2]))
-                for i in range(0, len(indices), 3):
-                    if i + 2 < len(indices):
-                        all_faces.append((indices[i] + base_v, indices[i+2] + base_v, indices[i+1] + base_v))
-                v_offset += len(verts)
-    
-    return all_verts, all_faces
 
 # ============================================================
-# 模型解析
+# 模型解析（通过 backend 分发）
 # ============================================================
 def parse_mesh_file(mesh_path):
-    if not HAS_MESH:
+    if _active_mesh_backend is None:
         return [], [], []
     try:
-        with open(mesh_path, 'rb') as f:
-            data = f.read()
-    except:
+        return _active_mesh_backend.parse_mesh_file(mesh_path)
+    except Exception:
         return [], [], []
-
-    if len(data) < 4:
-        return [], [], []
-
-    header = data[:4]
-    version = HEADER_VERSION_MAP.get(header)
-    if version is None:
-        return [], [], []
-
-    handler = _mesh_handlers.get(header)
-    if handler is None:
-        return [], [], []
-
-    try:
-        filename = os.path.basename(mesh_path)
-        if header == b'\x17\x00\x00\x00':
-            result = handler(data, mesh_path, filename, version, False, True)
-        else:
-            result = handler(data, mesh_path, filename, version, True)
-
-        if result and len(result) >= 3:
-            verts = [(v[0], v[1], v[2]) for v in result[0]]
-            uvs = [(uv[0], uv[1]) for uv in result[1]] if len(result) > 1 and result[1] else []
-            faces = [(f[0], f[1], f[2]) for f in result[2]]
-            return verts, uvs, faces
-    except:
-        pass
-
-    return [], [], []
 
 # ============================================================
 # JSON 解析和资源提取
@@ -641,7 +509,7 @@ def export_single_map(map_folder, mesh_folder, output_base_dir, export_markers, 
     
     # 5. 地形
     terrain_verts, terrain_faces = [], []
-    if meshes_file and HAS_MESHES and HAS_LZ4:
+    if meshes_file and _active_meshes_backend:
         terrain_verts, terrain_faces = parse_meshes_to_obj_data(meshes_file)
     log_entry['terrain_verts'] = len(terrain_verts)
     log_entry['terrain_tris'] = len(terrain_faces)
@@ -654,7 +522,7 @@ def export_single_map(map_folder, mesh_folder, output_base_dir, export_markers, 
     missing_count = 0
     
     texture_map = {}
-    if HAS_MESH and os.path.isdir(mesh_folder) and level_meshes:
+    if _active_mesh_backend and os.path.isdir(mesh_folder) and level_meshes:
         for lm in level_meshes:
             res = lm['resource_name']
             if lm.get('texture'):

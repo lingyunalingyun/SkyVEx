@@ -737,15 +737,10 @@ class SkyExportGUI:
         self._set_all_markers(False)
 
     # ── module import ──────────────────────────────────────
-    SCRIPT_FILES = [
-        ("batch_export.py", "导出核心"),
-        ("meshtoobj.py", "Mesh 解析"),
-        ("Sky_Bstbake.py", "地形解析"),
-        ("bintojson.py", "Bin→JSON"),
-    ]
 
     def _import_modules(self):
         self._export_single_map_fn = None
+        self._batch_mod = None
         self._bintojson_path = os.path.join(self._script_dir, "bintojson.py")
         try:
             import importlib.util
@@ -754,7 +749,7 @@ class SkyExportGUI:
             batch_path = os.path.join(self._script_dir, "batch_export.py")
             if os.path.exists(batch_path):
                 old_out, old_err = sys.stdout, sys.stderr
-                sys.stdout = _io.StringIO()
+                sys.stdout = cap = _io.StringIO()
                 sys.stderr = _io.StringIO()
                 try:
                     if self._script_dir not in sys.path:
@@ -767,8 +762,12 @@ class SkyExportGUI:
                     self._export_single_map_fn = getattr(
                         bmod, "export_single_map", None
                     )
+                    self._batch_mod = bmod
                 finally:
                     sys.stdout, sys.stderr = old_out, old_err
+
+                for line in cap.getvalue().strip().splitlines():
+                    self._log(line + "\n")
 
             self._modules_loaded = True
             self._log(f"[OK] 模块加载完成 ({self._script_dir})\n")
@@ -779,8 +778,9 @@ class SkyExportGUI:
     def _open_script_manager(self):
         win = tk.Toplevel(self.root)
         win.title("解析模块管理")
-        win.geometry("560x340")
-        win.resizable(False, False)
+        win.geometry("1100x700")
+        win.resizable(True, True)
+        win.minsize(800, 500)
         win.transient(self.root)
         win.grab_set()
         win.configure(bg=self.BG)
@@ -808,51 +808,212 @@ class SkyExportGUI:
             )
             if p:
                 dir_var.set(p)
-                refresh_list()
 
         ttk.Button(dir_frame, text="更换", width=6, command=browse_dir).grid(
             row=0, column=2
         )
 
-        # file list
-        list_frame = ttk.LabelFrame(
-            win, text="脚本文件", padding=(12, 6, 12, 8)
+        # ── Backend status ──
+        from backends import get_meshes_backends, get_mesh_backends
+
+        backend_frame = ttk.LabelFrame(
+            win, text="后端状态", padding=(12, 6, 12, 8)
         )
-        list_frame.pack(fill="both", expand=True, padx=16, pady=(8, 0))
+        backend_frame.pack(fill="both", expand=True, padx=16, pady=(8, 0))
 
-        def refresh_list():
-            for w in list_frame.winfo_children():
-                w.destroy()
-            d = dir_var.get()
-            for fname, desc in self.SCRIPT_FILES:
-                row = ttk.Frame(list_frame)
-                row.pack(fill="x", pady=2)
-                fpath = os.path.join(d, fname)
-                exists = os.path.exists(fpath)
-                status = "✓" if exists else "✗"
-                ttk.Label(
-                    row,
-                    text=f"{status}  {fname}",
-                    font=("Consolas", 9),
-                    foreground="#6ec86e" if exists else "#e05050",
-                ).pack(side="left")
-                ttk.Label(
-                    row, text=desc, foreground="#6b7080", font=("Segoe UI", 8)
-                ).pack(side="left", padx=(8, 0))
+        def _get_active_name(kind):
+            attr = f'_active_{kind}_backend'
+            if self._batch_mod and hasattr(self._batch_mod, attr):
+                ab = getattr(self._batch_mod, attr)
+                if ab:
+                    return ab.name
+            return ""
 
-                def open_file(p=fpath):
-                    if os.path.exists(p):
-                        os.startfile(p)
+        def _validate_file(filepath):
+            ext = os.path.splitext(filepath)[1].lower()
+            if ext == '.py':
+                try:
+                    with open(filepath, 'r', encoding='utf-8', errors='replace') as f:
+                        source = f.read()
+                    compile(source, filepath, 'exec')
+                    return True, None
+                except SyntaxError as e:
+                    return False, f"Python 语法错误: 第 {e.lineno} 行\n{e.msg}"
+                except Exception as e:
+                    return False, f"无法读取文件: {e}"
+            elif ext == '.dll':
+                try:
+                    import ctypes
+                    ctypes.CDLL(filepath)
+                    return True, None
+                except OSError as e:
+                    return False, f"DLL 加载失败: {e}"
+            return True, None
 
+        def _select_file_for_backend(bk):
+            src_files = getattr(bk, 'source_files', [])
+            if not src_files:
+                return
+            exts = set()
+            for f in src_files:
+                ext = os.path.splitext(f)[1]
+                if ext:
+                    exts.add(ext)
+            filetypes = []
+            if '.py' in exts:
+                filetypes.append(("Python 脚本", "*.py"))
+            if '.dll' in exts:
+                filetypes.append(("动态链接库", "*.dll"))
+            filetypes.append(("所有文件", "*.*"))
+
+            chosen = filedialog.askopenfilename(
+                title=f"选择 {bk.name} 的脚本文件",
+                initialdir=dir_var.get(),
+                filetypes=filetypes,
+                parent=win,
+            )
+            if not chosen:
+                return
+
+            valid, err = _validate_file(chosen)
+            if not valid:
+                messagebox.showerror(
+                    "文件不可用",
+                    f"所选文件无法作为解析模块使用:\n\n{err}",
+                    parent=win,
+                )
+                return
+
+            import shutil
+            dest_name = os.path.basename(chosen)
+            dest_path = os.path.join(self._script_dir, dest_name)
+            if os.path.abspath(chosen) == os.path.abspath(dest_path):
+                self._log(f"[INFO] 文件已在脚本目录中: {dest_name}\n")
+                return
+            try:
+                shutil.copy2(chosen, dest_path)
+                self._log(f"[OK] 已复制 {dest_name} → {self._script_dir}\n")
+            except Exception as e:
+                messagebox.showerror("复制失败", str(e), parent=win)
+
+        def _show_backend_info(bk):
+            info_win = tk.Toplevel(win)
+            info_win.title(f"模块说明 — {bk.name}")
+            info_win.geometry("880x640")
+            info_win.resizable(True, True)
+            info_win.transient(win)
+            info_win.grab_set()
+            info_win.configure(bg=self.BG)
+
+            txt = tk.Text(
+                info_win, wrap="word", bg=self.BG, fg="#d0d0d0",
+                font=("Segoe UI", 9), relief="flat", padx=14, pady=12,
+                insertbackground=self.BG,
+            )
+            btn_frame = ttk.Frame(info_win)
+            btn_frame.pack(side="bottom", fill="x", pady=(6, 10))
+            ttk.Button(
+                btn_frame, text="关闭", command=info_win.destroy,
+            ).pack()
+
+            txt.pack(fill="both", expand=True, padx=8, pady=(8, 0))
+            txt.configure(font=("Segoe UI", 11))
+            txt.tag_configure("title", font=("Segoe UI", 16, "bold"), foreground=self.ACCENT)
+            txt.tag_configure("meta", foreground="#8090a0", font=("Segoe UI", 10))
+
+            txt.insert("end", f"{bk.name}\n", "title")
+            txt.insert("end", f"{bk.description}\n\n", "meta")
+            txt.insert("end", getattr(bk, 'info', '暂无说明。'))
+            txt.configure(state="disabled")
+
+        def _activate_backend(kind, name):
+            if not self._batch_mod or not hasattr(self._batch_mod, '_init_backends'):
+                return
+            kwargs = {}
+            if kind == "meshes":
+                kwargs["preferred_meshes"] = name
+                cur = _get_active_name("mesh")
+                if cur:
+                    kwargs["preferred_mesh"] = cur
+            else:
+                kwargs["preferred_mesh"] = name
+                cur = _get_active_name("meshes")
+                if cur:
+                    kwargs["preferred_meshes"] = cur
+            self._batch_mod._init_backends(**kwargs)
+            ab = getattr(self._batch_mod, f'_active_{kind}_backend', None)
+            if ab:
+                self._log(f"[OK] .{kind} 后端已切换: {ab.name}\n")
+            refresh_backends()
+
+        def _make_backend_row(parent, bk, is_active, kind):
+            avail = bk.is_available()
+            row = ttk.Frame(parent)
+            row.pack(fill="x", pady=2, padx=(8, 0))
+            row.columnconfigure(0, weight=1)
+
+            status = "✓" if avail else "✗"
+            color = self.ACCENT if is_active else ("#6ec86e" if avail else "#e05050")
+            prefix = "▶ " if is_active else "  "
+
+            lbl_frame = ttk.Frame(row)
+            lbl_frame.grid(row=0, column=0, sticky="w")
+            ttk.Label(
+                lbl_frame, text=f"{prefix}{status} {bk.name}",
+                font=("Consolas", 9, "bold" if is_active else ""),
+                foreground=color,
+            ).pack(side="left")
+            ttk.Label(
+                lbl_frame, text=f"  {bk.description}",
+                foreground="#8090a0" if not is_active else "#b0c0d0",
+                font=("Segoe UI", 8),
+            ).pack(side="left", padx=(2, 0))
+
+            col = 1
+            if avail and not is_active:
+                bk_name = bk.name
                 ttk.Button(
-                    row,
-                    text="打开",
-                    width=5,
-                    command=open_file,
-                    state="normal" if exists else "disabled",
-                ).pack(side="right")
+                    row, text="启用", width=4,
+                    command=lambda n=bk_name, k=kind: _activate_backend(k, n),
+                ).grid(row=0, column=col, padx=(4, 0))
+                col += 1
 
-        refresh_list()
+            bk_ref = bk
+            ttk.Button(
+                row, text="选择", width=4,
+                command=lambda b=bk_ref: _select_file_for_backend(b),
+            ).grid(row=0, column=col, padx=(4, 0))
+            ttk.Button(
+                row, text="ⓘ", width=2,
+                command=lambda b=bk_ref: _show_backend_info(b),
+            ).grid(row=0, column=col + 1, padx=(2, 0))
+
+        def refresh_backends():
+            for w in backend_frame.winfo_children():
+                w.destroy()
+
+            active_meshes = _get_active_name("meshes")
+            active_mesh = _get_active_name("mesh")
+
+            ttk.Label(
+                backend_frame, text=".meshes 后端 (地形/关卡几何)",
+                style="H.TLabel",
+            ).pack(anchor="w", pady=(0, 4))
+
+            meshes_bk = get_meshes_backends()
+            for name, bk in meshes_bk.items():
+                _make_backend_row(backend_frame, bk, name == active_meshes, "meshes")
+
+            ttk.Label(
+                backend_frame, text=".mesh 后端 (模型)",
+                style="H.TLabel",
+            ).pack(anchor="w", pady=(12, 4))
+
+            mesh_bk = get_mesh_backends()
+            for name, bk in mesh_bk.items():
+                _make_backend_row(backend_frame, bk, name == active_mesh, "mesh")
+
+        refresh_backends()
 
         def open_dir():
             d = dir_var.get()
@@ -866,20 +1027,11 @@ class SkyExportGUI:
         ttk.Button(
             btn_frame, text="打开目录", command=open_dir
         ).pack(side="left")
-
-        def apply_and_close():
-            new_dir = dir_var.get()
-            if new_dir != self._script_dir:
-                self._script_dir = new_dir
-                self._log(f"脚本目录已更改: {new_dir}\n")
-                self._import_modules()
-            win.destroy()
-
         ttk.Button(
-            btn_frame, text="应用并关闭", command=apply_and_close
+            btn_frame, text="关闭", command=win.destroy
         ).pack(side="right")
         ttk.Button(
-            btn_frame, text="重新加载", command=self._import_modules
+            btn_frame, text="刷新", command=refresh_backends
         ).pack(side="right", padx=(0, 6))
 
     # ── export ─────────────────────────────────────────────
