@@ -12,10 +12,12 @@ A graphical interface that wraps the community's existing map-parsing scripts, a
 
 - **One-click game directory scanning** — point at your game install, auto-discover all maps and mesh files
 - **APK extraction** — open a Sky APK directly and extract game assets without a PC install
-- **Visual resource browser** — scene-grouped map tree + model library with 4000+ individual meshes grouped by prefix
+- **Tabbed resource browser** — three-tab layout (Terrain / Models / Images) with scene-grouped map tree, 4000+ individual meshes grouped by prefix, and KTX texture gallery
 - **3D preview** — real-time OpenGL preview with vertex colors (terrain material blending) and top-down soft lighting; click any map or model to preview
+- **2D image preview** — click any KTX texture in the Images tab to decode and preview (supports BC1/BC3/BC4/BC5/BC6H/BC7)
+- **Per-material terrain export** — terrain OBJ split by material ID with shared material table (MTL), ready for Blender material assignment
 - **Individual mesh export** — browse and batch-export standalone `.mesh` models (props, characters, items) to OBJ, not just terrain maps
-- **Marker class filtering** — background scan with progress bar, pick which marker types to export
+- **Marker class scanning** — scan marker class names from `.bin` files, pick which marker types to export
 - **Texture extraction** — KTX (BC6H) → PNG conversion, UV mapping in OBJ, material references in MTL
 - **Pluggable backend system** — swap between pure Python and native parsers at runtime; zero dependencies by default
 - **Script manager** — switch active backends, import custom scripts, view module info
@@ -68,9 +70,9 @@ python gui.py
 ```
 
 1. **Browse** to your game install directory, click **Scan** — or click **APK** to open an APK file directly
-2. Browse maps and models in the resource tree (expand "模型库" for individual meshes)
-3. Toggle **3D Preview** to preview any map or model with real-time OpenGL rendering
-4. Toggle markers, textures, adjust output directory
+2. Browse resources using tabs: **Terrain** for maps, **Models** for individual meshes, **Images** for KTX textures
+3. Toggle **3D Preview** to preview any map or model with real-time OpenGL rendering; click any image to see a 2D preview
+4. Click **Scan Marker Classes** to discover marker types, then toggle markers, textures, and adjust output directory
 5. Click **Start Export** — exports both selected maps and individual models
 
 ### CLI (original scripts)
@@ -137,7 +139,7 @@ All other upstream scripts are included **unmodified** from their original repos
 
 | Data | Description |
 |------|-------------|
-| Terrain | Ground mesh with material-blended vertex colors and AO |
+| Terrain | Ground mesh split by material ID, with shared MTL material table, vertex colors and AO |
 | Models (in-map) | Scene objects with transforms applied, Z-flipped for Blender |
 | Models (standalone) | Individual `.mesh` files exported to `Meshes/` subfolder with UVs |
 | Markers | Colored spheres at interaction points (optional) |

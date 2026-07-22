@@ -211,29 +211,51 @@ class SkyExportGUI:
         mid_frame = ttk.Frame(self.root)
         mid_frame.pack(fill="both", expand=True, padx=16, pady=(6, 0))
 
-        # ── left: map list ──
+        # ── left: resource list with tabs ──
         map_frame = ttk.LabelFrame(
             mid_frame, text="资源列表", padding=(8, 4, 8, 6)
         )
         map_frame.pack(side="left", fill="both", expand=True)
 
-        map_toolbar = ttk.Frame(map_frame)
-        map_toolbar.pack(fill="x", pady=(0, 4))
-        self.map_count_label = ttk.Label(
-            map_toolbar, text="", foreground="#6b7080", font=("Segoe UI", 8)
+        tab_bar = tk.Frame(map_frame, bg=self.BG)
+        tab_bar.pack(fill="x", pady=(0, 4))
+
+        self._tab_labels = {}
+        self._tab_frames = {}
+        self._tab_trees = {}
+        self._active_tab = "terrain"
+
+        for key, text in [("terrain", "地形"), ("models", "模型库"), ("images", "图片资源")]:
+            lbl = tk.Label(
+                tab_bar, text=text, fg=self.FG_DIM, bg=self.BG,
+                font=("Segoe UI", 9), padx=10, pady=3, cursor="hand2",
+            )
+            lbl.pack(side="left")
+            lbl.bind("<Button-1>", lambda e, k=key: self._switch_tab(k))
+            self._tab_labels[key] = lbl
+
+        self.map_count_label = tk.Label(
+            tab_bar, text="", fg="#6b7080", bg=self.BG, font=("Segoe UI", 8)
         )
         self.map_count_label.pack(side="right")
 
-        self.map_tree = ttk.Treeview(
-            map_frame, show="tree", selectmode="none", style="Map.Treeview"
-        )
-        map_scroll = ttk.Scrollbar(
-            map_frame, orient="vertical", command=self.map_tree.yview
-        )
-        self.map_tree.configure(yscrollcommand=map_scroll.set)
-        self.map_tree.pack(side="left", fill="both", expand=True)
-        map_scroll.pack(side="right", fill="y")
-        self.map_tree.bind("<Button-1>", self._on_map_click)
+        for key in ("terrain", "models", "images"):
+            frame = tk.Frame(map_frame, bg=self.BG_PANEL)
+            tree = ttk.Treeview(
+                frame, show="tree", selectmode="none", style="Map.Treeview"
+            )
+            scroll = ttk.Scrollbar(
+                frame, orient="vertical", command=tree.yview
+            )
+            tree.configure(yscrollcommand=scroll.set)
+            tree.pack(side="left", fill="both", expand=True)
+            scroll.pack(side="right", fill="y")
+            tree.bind("<Button-1>", self._on_map_click)
+            self._tab_frames[key] = frame
+            self._tab_trees[key] = tree
+
+        self.map_tree = self._tab_trees["terrain"]
+        self._switch_tab("terrain")
 
         # ── right panel ──
         right_panel = ttk.Frame(mid_frame)
@@ -307,6 +329,13 @@ class SkyExportGUI:
             right_panel, text="标记类名", padding=(8, 4, 8, 6)
         )
         marker_frame.pack(fill="both", expand=True, pady=(6, 0))
+
+        marker_btn_row = ttk.Frame(marker_frame)
+        marker_btn_row.pack(fill="x", pady=(0, 4))
+        ttk.Button(
+            marker_btn_row, text="扫描标记类名", width=14,
+            command=self._scan_markers,
+        ).pack(side="left")
 
         self.marker_tree = ttk.Treeview(
             marker_frame, show="tree", selectmode="none",
@@ -541,34 +570,40 @@ class SkyExportGUI:
             f"[OK] 扫描完成: {len(self.map_entries)} 个区域, {total_maps} 张地图, {len(mesh_files)} 个模型\n"
         )
 
-        if total_maps > 0:
-            self._scan_markers()
-
     def _populate_map_list(self, mesh_files=None, mesh_dir=None):
-        self.map_tree.delete(*self.map_tree.get_children())
+        for tree in self._tab_trees.values():
+            children = tree.get_children()
+            if children:
+                tree.delete(*children)
         self.map_data.clear()
 
+        terrain_tree = self._tab_trees["terrain"]
         for scene, maps in self.map_entries.items():
             display = SCENE_DISPLAY.get(scene, scene)
-            sid = self.map_tree.insert(
+            sid = terrain_tree.insert(
                 "", "end",
                 text=f"{display} ({scene}) — {len(maps)} 张",
                 open=True,
             )
-            self.map_data[sid] = {"scene": scene, "selected": True}
+            self.map_data[f"t:{sid}"] = {"scene": scene, "selected": True}
 
             for name, path in maps:
-                iid = self.map_tree.insert(sid, "end", text=name)
-                self.map_data[iid] = {
+                iid = terrain_tree.insert(sid, "end", text=name)
+                self.map_data[f"t:{iid}"] = {
                     "name": name, "path": path, "selected": True,
                 }
 
         if mesh_files and mesh_dir:
             self._populate_mesh_entries(mesh_files, mesh_dir)
+        try:
+            self._populate_image_entries()
+        except Exception as e:
+            self._log(f"[WARN] 图片资源扫描失败: {e}\n")
 
         self._update_map_count()
 
     def _populate_mesh_entries(self, mesh_files, mesh_dir):
+        mesh_tree = self._tab_trees["models"]
         groups = OrderedDict()
         for f in mesh_files:
             name = f[:-5]
@@ -576,39 +611,93 @@ class SkyExportGUI:
             group = prefix.group(1) if prefix else "Other"
             groups.setdefault(group, []).append((name, os.path.join(mesh_dir, f)))
 
-        root_id = self.map_tree.insert(
+        root_id = mesh_tree.insert(
             "", "end",
             text=f"模型库 — {len(mesh_files)} 个模型",
             open=False,
         )
-        self.map_data[root_id] = {"mesh_root": True}
+        self.map_data[f"m:{root_id}"] = {"mesh_root": True}
 
         for group, items in groups.items():
-            gid = self.map_tree.insert(
+            gid = mesh_tree.insert(
                 root_id, "end",
                 text=f"{group} ({len(items)})",
                 open=False,
             )
-            self.map_data[gid] = {"mesh_group": group}
+            self.map_data[f"m:{gid}"] = {"mesh_group": group}
             for name, path in items:
-                iid = self.map_tree.insert(gid, "end", text=name)
-                self.map_data[iid] = {
+                iid = mesh_tree.insert(gid, "end", text=name)
+                self.map_data[f"m:{iid}"] = {
                     "name": name, "mesh_file": path, "selected": True,
                 }
 
-    def _on_map_click(self, event):
-        iid = self.map_tree.identify_row(event.y)
-        if not iid or iid not in self.map_data:
+    def _populate_image_entries(self):
+        image_tree = self._tab_trees["images"]
+        game_dir = self.game_dir_var.get().strip()
+        if not game_dir:
             return
+        candidates = [
+            os.path.join(game_dir, "data", "assets", "initial", "Data", "Images", "Bin", "BC"),
+            os.path.join(game_dir, "data", "assets", "images", "Data", "Images", "Bin", "BC"),
+        ]
+        total = 0
+        for img_dir in candidates:
+            if not os.path.isdir(img_dir):
+                continue
+            ktx_files = sorted(f for f in os.listdir(img_dir) if f.lower().endswith(".ktx"))
+            if not ktx_files:
+                continue
+            rel = os.path.relpath(img_dir, game_dir)
+            gid = image_tree.insert(
+                "", "end",
+                text=f"{rel} — {len(ktx_files)} 张",
+                open=False,
+            )
+            self.map_data[f"i:{gid}"] = {"image_dir": img_dir}
+            for f in ktx_files:
+                name = os.path.splitext(f)[0]
+                iid = image_tree.insert(gid, "end", text=name)
+                self.map_data[f"i:{iid}"] = {
+                    "name": name, "image_file": os.path.join(img_dir, f),
+                }
+                total += 1
 
-        data = self.map_data[iid]
+    def _switch_tab(self, key):
+        for k, frame in self._tab_frames.items():
+            frame.pack_forget()
+        self._tab_frames[key].pack(fill="both", expand=True)
+        for k, lbl in self._tab_labels.items():
+            if k == key:
+                lbl.configure(fg=self.ACCENT, font=("Segoe UI", 9, "bold"))
+            else:
+                lbl.configure(fg=self.FG_DIM, font=("Segoe UI", 9))
+        self._active_tab = key
+
+    _TAB_PREFIX = {"terrain": "t", "models": "m", "images": "i"}
+
+    def _on_map_click(self, event):
+        tree = self._tab_trees.get(self._active_tab)
+        if not tree:
+            return
+        iid = tree.identify_row(event.y)
+        if not iid:
+            return
+        key = f"{self._TAB_PREFIX.get(self._active_tab, '')}:{iid}"
+        data = self.map_data.get(key)
+        if not data:
+            return
 
         if "path" in data:
             if self._preview_panel:
+                self._show_3d_preview()
                 self._load_preview_for_map(data["path"])
         elif "mesh_file" in data:
             if self._preview_panel:
+                self._show_3d_preview()
                 self._load_preview_for_mesh(data["mesh_file"])
+        elif "image_file" in data:
+            if self._preview_panel:
+                self._load_preview_for_image(data["image_file"], data.get("name", ""))
 
     def _update_map_count(self):
         maps = sum(1 for d in self.map_data.values() if "path" in d)
@@ -639,8 +728,12 @@ class SkyExportGUI:
         pass
 
     def _scan_markers(self):
-        selected = self._get_selected_maps()
-        if not selected or self.running:
+        selected = [
+            (name, path)
+            for maps in self.map_entries.values()
+            for name, path in maps
+        ]
+        if not selected:
             return
 
         self.progress.configure(mode="determinate", maximum=len(selected), value=0)
@@ -652,8 +745,21 @@ class SkyExportGUI:
         t.start()
 
     def _do_scan_markers(self, selected):
+        try:
+            self._do_scan_markers_inner(selected)
+        except Exception as e:
+            self.log_queue.put(f"[ERR] 标记扫描线程崩溃: {e}\n")
+
+    def _do_scan_markers_inner(self, selected):
         classes = set()
         total = len(selected)
+
+        try:
+            from bintojson import parse_bin
+        except ImportError:
+            parse_bin = None
+            self.log_queue.put("[WARN] bintojson 导入失败，回退到 JSON 文件\n")
+
         for i, (name, path) in enumerate(selected):
             bin_file = os.path.join(path, "Objects.level.bin")
             if not os.path.exists(bin_file):
@@ -666,23 +772,17 @@ class SkyExportGUI:
                 self.root.after(0, self._scan_markers_tick, i + 1, total)
                 continue
 
-            json_path = bin_file + ".json"
-            if not os.path.exists(json_path) and os.path.exists(
-                self._bintojson_path
-            ):
-                subprocess.run(
-                    [sys.executable, self._bintojson_path, bin_file],
-                    capture_output=True,
-                    cwd=path,
-                )
-
-            if not os.path.exists(json_path):
-                self.root.after(0, self._scan_markers_tick, i + 1, total)
-                continue
-
             try:
-                with open(json_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
+                if parse_bin:
+                    data = parse_bin(bin_file)
+                else:
+                    json_path = bin_file + ".json"
+                    if not os.path.exists(json_path):
+                        self.root.after(0, self._scan_markers_tick, i + 1, total)
+                        continue
+                    with open(json_path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+
                 bst = data.get("BSTNodes", {})
                 for nd in bst.values():
                     if isinstance(nd, dict):
@@ -781,6 +881,19 @@ class SkyExportGUI:
             on_close=self._on_preview_closed,
         )
         self._preview_panel.frame.pack(fill="both", expand=True)
+
+        self._image_preview_frame = tk.Frame(self._preview_container, bg="#050d18")
+        self._image_preview_label = tk.Label(
+            self._image_preview_frame, bg="#050d18", anchor="center",
+        )
+        self._image_preview_label.pack(fill="both", expand=True)
+        self._image_preview_info = tk.Label(
+            self._image_preview_frame, text="", fg="#506070", bg="#0a1628",
+            font=("Segoe UI", 8),
+        )
+        self._image_preview_info.pack(side="bottom", fill="x")
+        self._image_photo = None
+
         self._log("[OK] 3D 预览面板已启用\n")
 
         selected = self._get_selected_maps()
@@ -791,6 +904,7 @@ class SkyExportGUI:
         if self._preview_panel:
             self._preview_panel.destroy()
             self._preview_panel = None
+        self._image_photo = None
         self._preview_container.pack_forget()
 
     def _on_preview_closed(self):
@@ -831,13 +945,88 @@ class SkyExportGUI:
         if self._batch_mod:
             try:
                 verts, uvs, faces = self._batch_mod.parse_mesh_file(mesh_path)
-                if verts and faces:
-                    self._preview_panel.load_mesh(verts, faces)
-                    self._log(f"[OK] 预览: {name} ({len(verts):,} 顶点, {len(faces):,} 面)\n")
-                else:
+                if not verts or not faces:
                     self._log(f"[WARN] {name}: 无法解析 (不支持的格式或空数据)\n")
+                    return
+                self._preview_panel.load_mesh(verts, faces)
+                self._log(f"[OK] 预览: {name} ({len(verts):,} 顶点, {len(faces):,} 面)\n")
             except Exception as e:
+                import traceback
                 self._log(f"[WARN] {name}: 预览失败 — {e}\n")
+                self._log(traceback.format_exc() + "\n")
+
+    def _show_3d_preview(self):
+        if hasattr(self, '_image_preview_frame'):
+            self._image_preview_frame.pack_forget()
+        if self._preview_panel:
+            self._preview_panel.frame.pack(fill="both", expand=True)
+
+    def _show_image_preview(self):
+        if self._preview_panel:
+            self._preview_panel.frame.pack_forget()
+        if hasattr(self, '_image_preview_frame'):
+            self._image_preview_frame.pack(fill="both", expand=True)
+
+    _KTX_DECODERS = {
+        0x8E8F: 'decode_bc6',  # GL_COMPRESSED_RGB_BPTC_UNSIGNED_FLOAT
+        0x8E8E: 'decode_bc6',  # GL_COMPRESSED_RGB_BPTC_SIGNED_FLOAT
+        0x8E8C: 'decode_bc7',  # GL_COMPRESSED_RGBA_BPTC_UNORM
+        0x83F0: 'decode_bc1',  # GL_COMPRESSED_RGB_S3TC_DXT1
+        0x83F1: 'decode_bc1',  # GL_COMPRESSED_RGBA_S3TC_DXT1
+        0x83F3: 'decode_bc3',  # GL_COMPRESSED_RGBA_S3TC_DXT5
+        0x8DBB: 'decode_bc4',  # GL_COMPRESSED_RED_RGTC1
+        0x8DBD: 'decode_bc5',  # GL_COMPRESSED_RG_RGTC2
+    }
+
+    def _load_preview_for_image(self, ktx_path, name=""):
+        if not self._preview_panel:
+            return
+        self._show_image_preview()
+        try:
+            import struct as _struct
+            import texture2ddecoder
+            from PIL import Image as PILImage, ImageTk
+
+            with open(ktx_path, 'rb') as f:
+                f.read(12 + 4 + 4 + 4 + 4)
+                gl_internal_fmt = _struct.unpack('<I', f.read(4))[0]
+                f.read(4)
+                width = _struct.unpack('<I', f.read(4))[0]
+                height = _struct.unpack('<I', f.read(4))[0]
+                f.read(4 + 4 + 4 + 4)
+                kvd_len = _struct.unpack('<I', f.read(4))[0]
+                f.read((kvd_len + 3) & ~3)
+                img_size = _struct.unpack('<I', f.read(4))[0]
+                img_data = f.read(img_size)
+
+            decoder_name = self._KTX_DECODERS.get(gl_internal_fmt)
+            if not decoder_name:
+                self._image_preview_label.configure(image="")
+                self._image_preview_info.configure(
+                    text=f"{name}  不支持的格式: 0x{gl_internal_fmt:04X}")
+                self._log(f"[WARN] {name}: 不支持的 KTX 格式 0x{gl_internal_fmt:04X}\n")
+                return
+
+            decoder_fn = getattr(texture2ddecoder, decoder_name)
+            decoded = decoder_fn(img_data, width, height)
+            img = PILImage.frombytes('RGBA', (width, height), decoded)
+            b, g, r, a = img.split()
+            img = PILImage.merge('RGBA', (r, g, b, a))
+
+            max_w = self._image_preview_label.winfo_width() or 400
+            max_h = self._image_preview_label.winfo_height() or 400
+            scale = min(max_w / width, max_h / height, 1.0)
+            if scale < 1.0:
+                img = img.resize((int(width * scale), int(height * scale)), PILImage.LANCZOS)
+
+            self._image_photo = ImageTk.PhotoImage(img)
+            self._image_preview_label.configure(image=self._image_photo)
+            self._image_preview_info.configure(text=f"{name}  ({width}×{height})")
+            self._log(f"[OK] 图片预览: {name} ({width}×{height})\n")
+        except Exception as e:
+            self._image_preview_label.configure(image="")
+            self._image_preview_info.configure(text=f"解码失败: {e}")
+            self._log(f"[WARN] 图片预览失败: {e}\n")
 
     def _open_script_manager(self):
         win = tk.Toplevel(self.root)

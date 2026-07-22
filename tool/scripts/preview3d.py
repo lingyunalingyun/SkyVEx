@@ -103,6 +103,7 @@ class PreviewPanel:
         self._canvas.bind("<B3-Motion>", self._on_pan)
         self._canvas.bind("<MouseWheel>", self._on_scroll)
         self._canvas.bind("<Configure>", self._on_resize)
+        self._canvas.bind("<Map>", self._on_resize)
 
         self._setup_gl()
 
@@ -176,9 +177,11 @@ class PreviewPanel:
 
     def _make_current(self):
         if self._gl_inited:
-            self._user32.ReleaseDC(self._hwnd, self._hdc)
-            self._hwnd = self._canvas.winfo_id()
-            self._hdc = self._user32.GetDC(self._hwnd)
+            new_hwnd = self._canvas.winfo_id()
+            if new_hwnd != self._hwnd:
+                self._user32.ReleaseDC(self._hwnd, self._hdc)
+                self._hwnd = new_hwnd
+                self._hdc = self._user32.GetDC(new_hwnd)
             self._opengl32.wglMakeCurrent(self._hdc, self._hglrc)
 
     def _swap_buffers(self):
