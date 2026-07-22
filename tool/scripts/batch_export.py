@@ -30,6 +30,7 @@ sys.path.insert(0, SCRIPT_DIR)
 from backends import (
     get_available_meshes_backends, get_available_mesh_backends,
     get_meshes_backends, get_mesh_backends,
+    MATERIAL_NAMES, MATERIAL_COLORS, MATERIAL_COLOR_DEFAULT,
 )
 
 _active_meshes_backend = None
@@ -189,12 +190,12 @@ def find_mesh_file(mesh_folder, resource_name):
 # ============================================================
 def parse_meshes_to_obj_data(meshes_file):
     if _active_meshes_backend is None:
-        return [], [], []
+        return [], [], [], []
     try:
         return _active_meshes_backend.parse_to_obj_data(meshes_file)
     except Exception as e:
         print(f"    解析失败 ({_active_meshes_backend.name}): {e}")
-        return [], [], []
+        return [], [], [], []
 
 # ============================================================
 # 模型解析（通过 backend 分发）
@@ -509,8 +510,9 @@ def export_single_map(map_folder, mesh_folder, output_base_dir, export_markers, 
     
     # 5. 地形
     terrain_verts, terrain_faces = [], []
+    terrain_mat_ids = []
     if meshes_file and _active_meshes_backend:
-        terrain_verts, terrain_faces, _colors = parse_meshes_to_obj_data(meshes_file)
+        terrain_verts, terrain_faces, _colors, terrain_mat_ids = parse_meshes_to_obj_data(meshes_file)
     log_entry['terrain_verts'] = len(terrain_verts)
     log_entry['terrain_tris'] = len(terrain_faces)
     
@@ -582,10 +584,33 @@ def export_single_map(map_folder, mesh_folder, output_base_dir, export_markers, 
 
     marker_classes = set(m['class'] for m in markers) if markers else set()
 
+    # 按面的三顶点多数投票决定该面的主材质
+    face_mats = []
+    if terrain_mat_ids and terrain_faces:
+        for tri in terrain_faces:
+            m0 = terrain_mat_ids[tri[0]] if tri[0] < len(terrain_mat_ids) else -1
+            m1 = terrain_mat_ids[tri[1]] if tri[1] < len(terrain_mat_ids) else -1
+            m2 = terrain_mat_ids[tri[2]] if tri[2] < len(terrain_mat_ids) else -1
+            counts = {}
+            for m in (m0, m1, m2):
+                counts[m] = counts.get(m, 0) + 1
+            face_mats.append(max(counts, key=counts.get))
+
+    used_terrain_mats = set(face_mats) if face_mats else set()
+
     try:
         with open(mtl_path, 'w', encoding='utf-8') as mf:
             mf.write("# Sky Map Materials\n\n")
-            mf.write("newmtl terrain\nKd 0.45 0.42 0.38\nKa 0.1 0.1 0.1\nKs 0.0 0.0 0.0\nd 1.0\n\n")
+
+            if used_terrain_mats:
+                for mid in sorted(used_terrain_mats):
+                    name = MATERIAL_NAMES.get(mid, f"terrain_{mid}")
+                    c = MATERIAL_COLORS.get(mid, MATERIAL_COLOR_DEFAULT)
+                    mf.write(f"newmtl {name}\nKd {c[0]:.4f} {c[1]:.4f} {c[2]:.4f}\n")
+                    mf.write("Ka 0.1 0.1 0.1\nKs 0.0 0.0 0.0\nd 1.0\n\n")
+            else:
+                mf.write("newmtl terrain\nKd 0.45 0.42 0.38\nKa 0.1 0.1 0.1\nKs 0.0 0.0 0.0\nd 1.0\n\n")
+
             mf.write("newmtl model\nKd 0.75 0.73 0.68\nKa 0.1 0.1 0.1\nKs 0.0 0.0 0.0\nd 1.0\n\n")
 
             written_mtls = set()
@@ -612,11 +637,25 @@ def export_single_map(map_folder, mesh_folder, output_base_dir, export_markers, 
             f.write(f"mtllib {map_name}.mtl\n\n")
 
             if terrain_verts:
-                f.write("o Terrain\nusemtl terrain\n")
+                f.write("o Terrain\n")
                 for v in terrain_verts:
                     f.write(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}\n")
-                for tri in terrain_faces:
-                    f.write(f"f {tri[0]+global_v} {tri[1]+global_v} {tri[2]+global_v}\n")
+
+                if face_mats:
+                    groups = {}
+                    for fi, tri in enumerate(terrain_faces):
+                        mid = face_mats[fi]
+                        groups.setdefault(mid, []).append(tri)
+                    for mid in sorted(groups):
+                        mat_name = MATERIAL_NAMES.get(mid, f"terrain_{mid}")
+                        f.write(f"usemtl {mat_name}\n")
+                        for tri in groups[mid]:
+                            f.write(f"f {tri[0]+global_v} {tri[1]+global_v} {tri[2]+global_v}\n")
+                else:
+                    f.write("usemtl terrain\n")
+                    for tri in terrain_faces:
+                        f.write(f"f {tri[0]+global_v} {tri[1]+global_v} {tri[2]+global_v}\n")
+
                 global_v += len(terrain_verts)
                 f.write("\n")
 

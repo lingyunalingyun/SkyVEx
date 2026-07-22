@@ -309,30 +309,15 @@ def find_mesh_file(mesh_folder, resource_name):
         return _global_mesh_index[resource_name]
     return None
 
-# ============================================================
-# 地形材质 ID → 颜色映射表（基于游戏内实际表现）
-TERRAIN_MAT_COLORS = {
-    16: (0.18, 0.22, 0.42),   # 岩石 - 深蓝
-    17: (0.20, 0.25, 0.45),   # 岩石变体
-    18: (0.15, 0.18, 0.38),   # 深岩石
-    28: (0.45, 0.42, 0.25),   # 过渡带 - 橄榄
-    32: (0.72, 0.62, 0.35),   # 沙地 - 黄
-    33: (0.68, 0.58, 0.32),   # 沙地变体
-    35: (0.65, 0.55, 0.30),   # 沙地变体
-    48: (0.35, 0.55, 0.20),   # 草地 - 绿
-    50: (0.30, 0.50, 0.18),   # 草地变体
-    80: (0.12, 0.12, 0.18),   # 悬崖基底 - 深灰蓝
-}
-TERRAIN_MAT_DEFAULT = (0.5, 0.5, 0.5)
+from backends import MATERIAL_COLORS, MATERIAL_COLOR_DEFAULT
 
 def _blend_terrain_color(materials, ao_brightness):
-    """根据材质ID和权重混合地形颜色，再乘以AO亮度（最低0.3）"""
     r, g, b = 0.0, 0.0, 0.0
     total_w = 0
     for mid, mw in materials:
         if mw <= 0:
             continue
-        mc = TERRAIN_MAT_COLORS.get(mid, TERRAIN_MAT_DEFAULT)
+        mc = MATERIAL_COLORS.get(mid, MATERIAL_COLOR_DEFAULT)
         r += mc[0] * mw
         g += mc[1] * mw
         b += mc[2] * mw
@@ -342,7 +327,7 @@ def _blend_terrain_color(materials, ao_brightness):
         g /= total_w
         b /= total_w
     else:
-        r, g, b = TERRAIN_MAT_DEFAULT
+        r, g, b = MATERIAL_COLOR_DEFAULT
     ao = max(ao_brightness / 255.0, 0.3)
     return (r * ao, g * ao, b * ao)
 

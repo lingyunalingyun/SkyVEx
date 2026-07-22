@@ -8,6 +8,77 @@ import sys
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+# 材质 ID → 名称映射 (来源: Miau — https://github.com/Miau0x1/Sky-.bin-reader)
+MATERIAL_NAMES = {
+    0x02: "Transparent",
+    0x03: "Void",
+    0x04: "Particle",
+    0x10: "Cliff",
+    0x11: "Soil",
+    0x12: "CliffLight",
+    0x13: "WallDamaged",
+    0x14: "Wall",
+    0x15: "Gold",
+    0x16: "Glacier",
+    0x17: "TileCeiling",
+    0x18: "TileFloor",
+    0x19: "TileWall",
+    0x1A: "WallBrick",
+    0x1B: "SoilWet",
+    0x1C: "CliffWet",
+    0x1D: "Bone",
+    0x1E: "Wood",
+    0x1F: "Ceramics",
+    0x20: "Sand",
+    0x21: "SandWet",
+    0x22: "SandLight",
+    0x23: "Snow",
+    0x24: "SandDeep",
+    0x25: "Mud",
+    0x30: "Grass",
+    0x31: "GrassWet",
+    0x32: "GrassLight",
+    0x33: "GrassMoss",
+    0x34: "Darkshroom",
+    0x50: "Cloud",
+}
+
+# 材质 ID → RGB 颜色 (0-1)
+MATERIAL_COLORS = {
+    0x02: (0.90, 0.90, 0.92),
+    0x03: (0.05, 0.05, 0.08),
+    0x04: (0.85, 0.85, 0.80),
+    0x10: (0.18, 0.22, 0.42),
+    0x11: (0.20, 0.25, 0.45),
+    0x12: (0.15, 0.18, 0.38),
+    0x13: (0.35, 0.30, 0.28),
+    0x14: (0.40, 0.38, 0.35),
+    0x15: (0.85, 0.70, 0.25),
+    0x16: (0.60, 0.78, 0.88),
+    0x17: (0.55, 0.50, 0.42),
+    0x18: (0.50, 0.45, 0.38),
+    0x19: (0.52, 0.48, 0.40),
+    0x1A: (0.55, 0.32, 0.22),
+    0x1B: (0.25, 0.22, 0.18),
+    0x1C: (0.45, 0.42, 0.25),
+    0x1D: (0.78, 0.75, 0.68),
+    0x1E: (0.45, 0.32, 0.18),
+    0x1F: (0.82, 0.78, 0.72),
+    0x20: (0.72, 0.62, 0.35),
+    0x21: (0.68, 0.58, 0.32),
+    0x22: (0.78, 0.70, 0.45),
+    0x23: (0.92, 0.92, 0.95),
+    0x24: (0.62, 0.52, 0.28),
+    0x25: (0.35, 0.28, 0.18),
+    0x30: (0.35, 0.55, 0.20),
+    0x31: (0.28, 0.45, 0.18),
+    0x32: (0.42, 0.60, 0.28),
+    0x33: (0.32, 0.48, 0.25),
+    0x34: (0.22, 0.15, 0.25),
+    0x50: (0.75, 0.78, 0.82),
+}
+MATERIAL_COLOR_DEFAULT = (0.5, 0.5, 0.5)
+
 _meshes_backends = {}
 _mesh_backends = {}
 
@@ -27,7 +98,7 @@ class MeshesBackend:
         return set()
 
     def parse_to_obj_data(self, meshes_file):
-        """Parse .meshes → (verts, faces, colors). colors=[(r,g,b),...] 0-1, may be empty."""
+        """Parse .meshes → (verts, faces, colors, mat_ids). colors/mat_ids may be empty."""
         raise NotImplementedError
 
     def parse_to_json(self, meshes_file):
@@ -98,33 +169,30 @@ class BstBakeMeshesBackend(MeshesBackend):
         "不同数据段 (LOD0 vs GEO0)，输出的顶点数和面数不同。"
     )
 
-    _MAT_COLORS = {
-        16: (0.18, 0.22, 0.42), 17: (0.20, 0.25, 0.45),
-        18: (0.15, 0.18, 0.38), 28: (0.45, 0.42, 0.25),
-        32: (0.72, 0.62, 0.35), 33: (0.68, 0.58, 0.32),
-        35: (0.65, 0.55, 0.30), 48: (0.35, 0.55, 0.20),
-        50: (0.30, 0.50, 0.18), 80: (0.12, 0.12, 0.18),
-    }
-    _MAT_DEFAULT = (0.5, 0.5, 0.5)
-
     @staticmethod
     def _blend_color(materials, ao_brightness):
         r = g = b = 0.0
         total_w = 0
-        mc = BstBakeMeshesBackend._MAT_COLORS
-        md = BstBakeMeshesBackend._MAT_DEFAULT
         for mid, mw in materials:
             if mw <= 0:
                 continue
-            c = mc.get(mid, md)
+            c = MATERIAL_COLORS.get(mid, MATERIAL_COLOR_DEFAULT)
             r += c[0] * mw; g += c[1] * mw; b += c[2] * mw
             total_w += mw
         if total_w > 0:
             r /= total_w; g /= total_w; b /= total_w
         else:
-            r, g, b = md
+            r, g, b = MATERIAL_COLOR_DEFAULT
         ao = max(ao_brightness / 255.0, 0.3)
         return (r * ao, g * ao, b * ao)
+
+    @staticmethod
+    def _dominant_material(materials):
+        best_id, best_w = -1, -1
+        for mid, mw in materials:
+            if mw > best_w:
+                best_id, best_w = mid, mw
+        return best_id
 
     def __init__(self):
         self._parse_and_split = None
@@ -158,7 +226,7 @@ class BstBakeMeshesBackend(MeshesBackend):
     def parse_to_obj_data(self, meshes_file):
         self._load()
         if not self.is_available():
-            return [], []
+            return [], [], [], []
         import struct
         import lz4.block
 
@@ -166,10 +234,10 @@ class BstBakeMeshesBackend(MeshesBackend):
             with open(meshes_file, 'rb') as f:
                 data = f.read()
         except Exception:
-            return [], []
+            return [], [], [], []
 
         if data[0:4] != b'LVL0':
-            return [], []
+            return [], [], [], []
 
         file_version = struct.unpack_from('<I', data, 0x04)[0]
         lod0_offset = lod0_length = 0
@@ -189,7 +257,7 @@ class BstBakeMeshesBackend(MeshesBackend):
                 metr_offset, metr_length = seg_offset, seg_length
 
         if lod0_length == 0:
-            return [], []
+            return [], [], [], []
 
         compressed = data[lod0_offset:lod0_offset + lod0_length]
         decompressed = lz4.block.decompress(compressed, uncompressed_size=0xC00000)
@@ -199,11 +267,12 @@ class BstBakeMeshesBackend(MeshesBackend):
         try:
             result, _ = self._parse_and_split(decompressed, file_version, metr_data, geo_data)
         except Exception:
-            return [], []
+            return [], [], [], []
 
         all_verts = []
         all_faces = []
         all_colors = []
+        all_mat_ids = []
 
         for section in ['terrain', 'skirts', 'occluder']:
             for chunk in result.get(section, []):
@@ -233,6 +302,7 @@ class BstBakeMeshesBackend(MeshesBackend):
                                 mats = v.get('materials', [])
                                 ao = max(vc[0], vc[1], vc[2])
                                 all_colors.append(self._blend_color(mats, ao))
+                                all_mat_ids.append(self._dominant_material(mats))
                                 new_idx += 1
 
                     for patch in terrain_patches:
@@ -264,11 +334,12 @@ class BstBakeMeshesBackend(MeshesBackend):
                         mats = v.get('materials', [])
                         ao = max(vc[0], vc[1], vc[2])
                         all_colors.append(self._blend_color(mats, ao))
+                        all_mat_ids.append(self._dominant_material(mats))
                     for i in range(0, len(indices), 3):
                         if i + 2 < len(indices):
                             all_faces.append((indices[i] + base_v, indices[i+2] + base_v, indices[i+1] + base_v))
 
-        return all_verts, all_faces, all_colors
+        return all_verts, all_faces, all_colors, all_mat_ids
 
 
 # ── Built-in backend: meshes2obj_json (pure Python) ───────
@@ -332,14 +403,14 @@ class PurePythonMeshesBackend(MeshesBackend):
     def parse_to_obj_data(self, meshes_file):
         self._load()
         if not self._mod:
-            return [], [], []
+            return [], [], [], []
         try:
             with open(meshes_file, 'rb') as f:
                 buf = f.read()
             meshes = self._mod.LevelMeshes.from_file_buffer(buf)
             geo = meshes.geo
             if not geo or geo.vertex_count == 0:
-                return [], [], []
+                return [], [], [], []
 
             all_verts = []
             all_faces = []
@@ -361,9 +432,9 @@ class PurePythonMeshesBackend(MeshesBackend):
                     all_faces.append((a, b, c))
                     j += 3
 
-            return all_verts, all_faces, []
+            return all_verts, all_faces, [], []
         except Exception:
-            return [], [], []
+            return [], [], [], []
 
     def parse_to_json(self, meshes_file):
         self._load()

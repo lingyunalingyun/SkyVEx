@@ -808,7 +808,7 @@ class SkyExportGUI:
 
         if self._batch_mod:
             try:
-                verts, faces, colors = self._batch_mod.parse_meshes_to_obj_data(meshes_file)
+                verts, faces, colors, _mat_ids = self._batch_mod.parse_meshes_to_obj_data(meshes_file)
                 if verts and faces:
                     self._preview_panel.load_mesh(verts, faces, colors=colors, flip_normals=True)
                     name = os.path.basename(os.path.dirname(map_path)) or os.path.basename(map_path)
