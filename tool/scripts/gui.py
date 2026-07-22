@@ -956,15 +956,15 @@ class SkyExportGUI:
                 self._log(traceback.format_exc() + "\n")
 
     def _show_3d_preview(self):
-        if hasattr(self, '_image_preview_frame'):
+        if hasattr(self, '_image_preview_frame') and self._image_preview_frame.winfo_manager():
             self._image_preview_frame.pack_forget()
-        if self._preview_panel:
+        if self._preview_panel and not self._preview_panel.frame.winfo_manager():
             self._preview_panel.frame.pack(fill="both", expand=True)
 
     def _show_image_preview(self):
-        if self._preview_panel:
+        if self._preview_panel and self._preview_panel.frame.winfo_manager():
             self._preview_panel.frame.pack_forget()
-        if hasattr(self, '_image_preview_frame'):
+        if hasattr(self, '_image_preview_frame') and not self._image_preview_frame.winfo_manager():
             self._image_preview_frame.pack(fill="both", expand=True)
 
     _KTX_DECODERS = {

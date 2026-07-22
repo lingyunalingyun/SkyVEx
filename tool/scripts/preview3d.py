@@ -125,11 +125,23 @@ class PreviewPanel:
         self._canvas.update_idletasks()
         hwnd = self._canvas.winfo_id()
 
-        from ctypes import windll, wintypes, Structure, byref, sizeof
+        from ctypes import windll, wintypes, Structure, byref, sizeof, c_void_p
 
         gdi32 = windll.gdi32
         user32 = windll.user32
         opengl32 = windll.opengl32
+
+        user32.GetDC.argtypes = [c_void_p]
+        user32.GetDC.restype = c_void_p
+        user32.ReleaseDC.argtypes = [c_void_p, c_void_p]
+        gdi32.ChoosePixelFormat.argtypes = [c_void_p, c_void_p]
+        gdi32.SetPixelFormat.argtypes = [c_void_p, ctypes.c_int, c_void_p]
+        gdi32.SwapBuffers.argtypes = [c_void_p]
+        opengl32.wglCreateContext.argtypes = [c_void_p]
+        opengl32.wglCreateContext.restype = c_void_p
+        opengl32.wglMakeCurrent.argtypes = [c_void_p, c_void_p]
+        opengl32.wglDeleteContext.argtypes = [c_void_p]
+        opengl32.wglGetCurrentContext.restype = c_void_p
 
         class PIXELFORMATDESCRIPTOR(Structure):
             _fields_ = [
@@ -267,8 +279,14 @@ class PreviewPanel:
         self._center = (0.0, 0.0, 0.0)
         self._scale = 1.0
 
-        self._reset_view()
+        self._rot_x = 25.0
+        self._rot_y = 35.0
+        self._zoom = 1.0
+        self._pan_x = 0.0
+        self._pan_y = 0.0
         self._info_label.config(text=f"顶点: {nv:,}  面: {nf:,}")
+        self._canvas.update_idletasks()
+        self._render()
 
     def _compute_bounds(self, verts):
         if not verts:
@@ -338,6 +356,7 @@ class PreviewPanel:
 
         w = self._canvas.winfo_width()
         h = self._canvas.winfo_height()
+
         if w < 2 or h < 2:
             return
 
